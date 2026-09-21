@@ -94,6 +94,62 @@ def _pedestrian_candidates(
     return sorted(candidates, key=lambda item: (item[0], item[1].getID()))
 
 
+def _pedestrian_component_sizes(network) -> dict[str, int]:
+    """Return the undirected pedestrian-network component size for every edge.
+
+    Pedestrians may traverse SUMO edges in either direction.  Walking areas and
+    crossings are therefore loaded and included here even though they are not
+    valid building/parking snap targets themselves.
+    """
+    edges = {
+        edge.getID(): edge
+        for edge in network.getEdges(withInternal=True)
+        if edge.allows("pedestrian")
+    }
+    adjacency = {edge_id: set() for edge_id in edges}
+    for edge_id, edge in edges.items():
+        for neighbour in edge.getAllowedOutgoing("pedestrian"):
+            neighbour_id = neighbour.getID()
+            if neighbour_id not in edges:
+                continue
+            adjacency[edge_id].add(neighbour_id)
+            adjacency[neighbour_id].add(edge_id)
+
+    component_sizes: dict[str, int] = {}
+    seen: set[str] = set()
+    for edge_id in sorted(edges):
+        if edge_id in seen:
+            continue
+        component: list[str] = []
+        stack = [edge_id]
+        seen.add(edge_id)
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            for neighbour_id in adjacency[current]:
+                if neighbour_id not in seen:
+                    seen.add(neighbour_id)
+                    stack.append(neighbour_id)
+        size = len(component)
+        component_sizes.update({member: size for member in component})
+    return component_sizes
+
+
+def _best_pedestrian_candidate(
+    candidates: list[tuple],
+    component_sizes: dict[str, int],
+) -> tuple:
+    """Prefer a well-connected nearby lane over an isolated nearer stub."""
+    return min(
+        candidates,
+        key=lambda item: (
+            -int(component_sizes.get(item[1].getEdge().getID(), 0)),
+            float(item[0]),
+            item[1].getID(),
+        ),
+    )
+
+
 def _classification_data(model: dict, classification_id: str | None) -> tuple[dict, dict, dict]:
     classifications = model.get("buildingClassifications") or []
     classification = (
@@ -218,6 +274,31 @@ def _physical_parking_areas(parking_config_path: Path) -> list[dict]:
     return values
 
 
+def _pedestrian_path(
+    network,
+    source_edge,
+    destination_edge,
+    *,
+    from_position: float | None,
+    to_position: float | None,
+) -> tuple:
+    """Return a bidirectional pedestrian path without SUMO's same-edge bug."""
+    if source_edge == destination_edge:
+        if from_position is None or to_position is None:
+            distance = float(source_edge.getLength())
+        else:
+            distance = abs(float(to_position) - float(from_position))
+        return (source_edge,), distance
+    return network.getShortestPath(
+        source_edge,
+        destination_edge,
+        vClass="pedestrian",
+        ignoreDirection=True,
+        fromPos=from_position,
+        toPos=to_position,
+    )
+
+
 def _attach_building_parking_candidates(
     network,
     buildings: list[dict],
@@ -229,12 +310,12 @@ def _attach_building_parking_candidates(
         candidate_by_logical: dict[str, dict] = {}
         for access in parking_access.values():
             source_edge = network.getEdge(str(access["pedestrian_edge_id"]))
-            route, route_distance = network.getShortestPath(
+            route, route_distance = _pedestrian_path(
+                network,
                 source_edge,
                 destination_edge,
-                vClass="pedestrian",
-                fromPos=access.get("departure_position"),
-                toPos=building.get("arrival_position"),
+                from_position=access.get("departure_position"),
+                to_position=building.get("arrival_position"),
             )
             if route is None or route_distance is None:
                 continue
@@ -267,7 +348,11 @@ def _attach_building_parking_candidates(
 def resolve(model_snapshot: Path, network_path: Path, scenario_path: Path, parking_config_path: Path, output_path: Path) -> dict:
     model = json.loads(model_snapshot.read_text(encoding="utf-8"))
     scenario = yaml.safe_load(scenario_path.read_text(encoding="utf-8")) or {}
-    network = sumolib.net.readNet(str(network_path))
+    network = sumolib.net.readNet(
+        str(network_path),
+        withPedestrianConnections=True,
+    )
+    pedestrian_component_sizes = _pedestrian_component_sizes(network)
     selected_ids = {str(value) for value in model.get("selectedBuildingIds") or []}
     all_features = (model.get("buildings") or {}).get("features", [])
     feature_by_id = {_feature_id(feature): feature for feature in all_features}
@@ -416,7 +501,10 @@ def resolve(model_snapshot: Path, network_path: Path, scenario_path: Path, parki
 
     buildings = []
     for unresolved in unresolved_destinations:
-        distance, lane, position = unresolved.pop("_candidates")[0]
+        distance, lane, position = _best_pedestrian_candidate(
+            unresolved.pop("_candidates"),
+            pedestrian_component_sizes,
+        )
         pedestrian_xy = geomhelper.positionAtShapeOffset(
             list(lane.getShape()),
             position,
@@ -433,7 +521,10 @@ def resolve(model_snapshot: Path, network_path: Path, scenario_path: Path, parki
 
     candidate_origins = []
     for unresolved in unresolved_origins:
-        distance, lane, position = unresolved.pop("_candidates")[0]
+        distance, lane, position = _best_pedestrian_candidate(
+            unresolved.pop("_candidates"),
+            pedestrian_component_sizes,
+        )
         candidate_origins.append({
             **unresolved,
             "pedestrian_edge_id": lane.getEdge().getID(),
@@ -507,7 +598,10 @@ def resolve(model_snapshot: Path, network_path: Path, scenario_path: Path, parki
         if not candidates:
             inaccessible_parking_areas.append(parking)
             continue
-        distance, lane, position = candidates[0]
+        distance, lane, position = _best_pedestrian_candidate(
+            candidates,
+            pedestrian_component_sizes,
+        )
         pedestrian_xy = geomhelper.positionAtShapeOffset(
             list(lane.getShape()),
             position,
