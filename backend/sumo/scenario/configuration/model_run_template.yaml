@@ -1,0 +1,71 @@
+# Base settings copied into every model simulation run.
+# Model-specific times, demand, network edges, and parking targets are filled
+# into the per-run scenario snapshot by domain/simulations/service.py and
+# sumo/scenario/configuration/configure.py.
+
+simulation:
+  begin: 0
+  end: 7200
+  step_length: 1
+  pedestrian_model: striping
+
+rates:
+  cars_per_hour_per_point: 360
+  pedestrians_per_hour_per_point: 60
+
+vehicle_types:
+  passenger:
+    id: passenger
+    vClass: passenger
+    guiShape: passenger
+    accel: 2.6
+    decel: 4.5
+    sigma: 0.5
+    length: 5.0
+    maxSpeed: 13.89
+
+# New models store dedicated public-transportation origin buildings and points.
+# The legacy origin types below remain only as a fallback for older saved models
+# that do not yet contain the publicTransportOrigins field.
+person_demand:
+  max_access_distance_metres: 50
+  origin_types:
+    - name: Metro Station
+      mode: public_transport
+      weight: 1
+    - name: Residential
+      mode: residential
+      weight: 1
+
+parking_assignment:
+  policy: random
+
+controller:
+  policy: balanced_available
+  # Parking is observed at actual access roads. This preserves pass-by checks
+  # and prevents vehicles from reserving a space at departure time.
+  decision_mode: access_edge
+  parking_duration_min: 900
+  parking_duration_max: 3600
+  random_seed: 42
+  parking_choice:
+    model: weighted_random_utility
+    walking_speed_metres_per_second: 1.35
+    assumed_driving_speed_metres_per_second: 8.33
+    knowledge_probability: 0.50
+    uninformed_occupancy_mean: 0.60
+    uninformed_occupancy_stddev: 0.15
+    frustration_step: 0.35
+    stochastic_scale: 0.00
+    weights:
+      drive_time: 0.8
+      walk_time: 1.0
+      capacity: 0.8
+      absolute_free_space: 1.3
+      relative_free_space: 1.5
+  sumo_recovery:
+    enabled: true
+    checkpoint_interval_seconds: 300
+    completion_candidate_distance_metres: 2
+    max_attempts: 10
+  diagnostic_tracing: false

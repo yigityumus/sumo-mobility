@@ -1,0 +1,101 @@
+{
+  "study_name": "cite_test_2_ofat_v1",
+  "api_url": "http://localhost:8000",
+  "output_directory": "results/cite_test_2_ofat_v1",
+  "max_in_flight": 4,
+  "poll_seconds": 10,
+  "replicates": 1,
+  "baseline": {
+    "model_name": "Cite Scientifique TEST 2",
+    "classification_name": "Usage Policy",
+    "pedestrian_count": 13000,
+    "vehicle_count": 3000,
+    "residential_pedestrian_count": 4000,
+    "simulation_start_at": "2026-01-19T07:00:00",
+    "simulation_timezone": "Europe/Paris",
+    "duration_hours": 12,
+    "random_seed": 20260119,
+    "mode": "sumo",
+    "pedestrian_model": "nonInteracting",
+    "vehicle_fourier": {
+      "peak_count": 8,
+      "peak_width_hours": 0.3,
+      "harmonics": 10,
+      "peak_heights_percent": [100, 100, 100, 100, 100, 100, 100, 100]
+    },
+    "pedestrian_fourier": {
+      "peak_count": 8,
+      "peak_width_hours": 0.3,
+      "harmonics": 10,
+      "peak_heights_percent": [100, 100, 100, 100, 100, 100, 100, 100]
+    },
+    "vehicle_origin_allocation": "equal",
+    "parking_choice": {
+      "weights": {
+        "drive_time": 0.8,
+        "walk_time": 1.0,
+        "capacity": 0.8,
+        "absolute_free_space": 1.3,
+        "relative_free_space": 1.5
+      },
+      "knowledge_probability": 0.5,
+      "uninformed_occupancy_mean": 0.6,
+      "uninformed_occupancy_stddev": 0.15,
+      "frustration_step": 0.35,
+      "stochastic_scale": 0.0
+    }
+  },
+  "experiments": {
+    "vehicle_fourier_peaks": {
+      "enabled": true,
+      "values_percent": [0, 50, 100, 150, 200, 250, 300],
+      "other_peaks_percent": 100
+    },
+    "pedestrian_fourier_peaks": {
+      "enabled": true,
+      "values_percent": [0, 50, 100, 150, 200, 250, 300],
+      "other_peaks_percent": 100
+    },
+    "residential_pedestrians": {
+      "enabled": true,
+      "minimum": 0,
+      "maximum": 10000,
+      "step": 1000
+    },
+    "vehicle_count": {
+      "enabled": true,
+      "minimum": 0,
+      "maximum": 10000,
+      "step": 1000,
+      "keep_pedestrian_count_fixed": true
+    },
+    "vehicle_entry_allocations": {
+      "enabled": true,
+      "minimum_percent": 0,
+      "maximum_percent": 100,
+      "step_percent": 20,
+      "redistribute_remainder": "equal"
+    },
+    "parking_choice": {
+      "weights.drive_time": {"enabled": true, "minimum": 0, "maximum": 2, "step": 0.25},
+      "weights.walk_time": {"enabled": true, "minimum": 0, "maximum": 2, "step": 0.25},
+      "weights.capacity": {"enabled": true, "minimum": 0, "maximum": 2, "step": 0.25},
+      "weights.absolute_free_space": {"enabled": true, "minimum": 0, "maximum": 2, "step": 0.25},
+      "weights.relative_free_space": {"enabled": true, "minimum": 0, "maximum": 2, "step": 0.25},
+      "knowledge_probability": {"enabled": true, "minimum": 0, "maximum": 1, "step": 0.1},
+      "uninformed_occupancy_mean": {"enabled": true, "minimum": 0, "maximum": 1, "step": 0.1},
+      "uninformed_occupancy_stddev": {"enabled": true, "minimum": 0, "maximum": 0.5, "step": 0.05},
+      "frustration_step": {"enabled": true, "minimum": 0, "maximum": 1, "step": 0.1},
+      "stochastic_scale": {"enabled": true, "minimum": 0, "maximum": 1, "step": 0.1}
+    }
+  },
+  "real_world_comparison": {
+    "enabled": true,
+    "sensor_name": "Avenue Paul Langevin",
+    "detector_name": "SUP Detector",
+    "subjects": ["vehicles", "pedestrians"],
+    "mode": "weekly_average",
+    "start_weekday": 0,
+    "start_time": "07:00"
+  }
+}

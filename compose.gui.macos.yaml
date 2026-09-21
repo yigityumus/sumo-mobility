@@ -1,0 +1,10 @@
+services:
+  simulation-worker:
+    environment:
+      DISPLAY: ${MACOS_DISPLAY:-host.docker.internal:0}
+      XAUTHORITY: /tmp/.sumo-xquartz.xauth
+      LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-1}
+      LIBGL_ALWAYS_INDIRECT: ${LIBGL_ALWAYS_INDIRECT:-1}
+      QT_X11_NO_MITSHM: ${QT_X11_NO_MITSHM:-1}
+    volumes:
+      - ${MACOS_XAUTHORITY:?Run macOS GUI mode with make docker-run-gui-macos}:/tmp/.sumo-xquartz.xauth:ro

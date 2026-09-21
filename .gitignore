@@ -1,0 +1,110 @@
+# Python virtual environments
+
+.venv/
+venv/
+env/
+
+# Python cache and compiled files
+
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node and frontend build caches
+
+node_modules/
+.vite/
+npm-debug.log*
+
+# Generated data and local storage backups
+
+/data-backup/
+/sensitivity_analysis/results/
+
+# Local study configuration (commit the example files instead)
+
+/sensitivity_analysis/config.json
+/vehicle_calibration/config.json
+
+# Generated or downloaded model artifacts
+
+/models/
+/checkpoints/
+*.ckpt
+*.h5
+*.joblib
+*.keras
+*.onnx
+*.pickle
+*.pkl
+*.pt
+*.pth
+*.safetensors
+
+# Legacy SUMO simulation outputs
+
+backend/sumo/run/
+
+# Generic generated output directories
+
+output/
+outputs/
+logs/
+
+# Temporary generated files
+
+/tmp/
+
+# Temporary SUMO files
+
+*.log
+*.tmp
+*.bak
+*.orig
+*.swp
+*.swo
+
+# Build and packaging artifacts
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Jupyter
+
+.ipynb_checkpoints/
+
+# Editors and IDEs
+
+.vscode/
+.idea/
+*.code-workspace
+
+# Local agent/tool state
+
+.agents/
+.codex/
+
+# Operating-system files
+
+.DS_Store
+Thumbs.db
+
+# Local environment variables and secrets
+
+.env
+.env.*
+!.env.example
+
+# Temporary project reports
+
+hardcoded_paths.txt
+todo.txt
+.agents/
+.codex/

@@ -1,0 +1,9 @@
+services:
+  simulation-worker:
+    environment:
+      DISPLAY: ${DISPLAY:?DISPLAY must be set for SUMO GUI}
+      XAUTHORITY: ${XAUTHORITY:?XAUTHORITY must be set for SUMO GUI}
+      LIBGL_ALWAYS_SOFTWARE: ${LIBGL_ALWAYS_SOFTWARE:-1}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY}:${XAUTHORITY}:ro

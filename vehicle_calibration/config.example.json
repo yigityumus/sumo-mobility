@@ -1,0 +1,100 @@
+{
+  "study_name": "avenue_paul_langevin_vehicle_calibration_v1",
+  "api_url": "http://localhost:8000",
+  "output_directory": "results/avenue_paul_langevin_vehicle_calibration_v1",
+  "historical_results_directory": "../sensitivity_analysis/results/cite_test_2_ofat_v1",
+  "max_in_flight": 4,
+  "poll_seconds": 10,
+  "max_failed_retries": 1,
+  "max_analytics_attempts": 120,
+  "baseline": {
+    "model_name": "Cite Scientifique TEST 2",
+    "classification_name": "Usage Policy",
+    "pedestrian_count": 13000,
+    "vehicle_count": 3000,
+    "residential_pedestrian_count": 4000,
+    "simulation_start_at": "2026-01-19T07:00:00",
+    "simulation_timezone": "Europe/Paris",
+    "duration_hours": 12,
+    "random_seed": 20260119,
+    "mode": "sumo",
+    "pedestrian_model": "nonInteracting",
+    "vehicle_fourier": {
+      "peak_count": 8,
+      "peak_width_hours": 0.3,
+      "harmonics": 10,
+      "peak_heights_percent": [100, 100, 100, 100, 100, 100, 100, 100]
+    },
+    "pedestrian_fourier": {
+      "peak_count": 8,
+      "peak_width_hours": 0.3,
+      "harmonics": 10,
+      "peak_heights_percent": [100, 100, 100, 100, 100, 100, 100, 100]
+    },
+    "parking_choice": {
+      "weights": {
+        "drive_time": 0.8,
+        "walk_time": 1.0,
+        "capacity": 0.8,
+        "absolute_free_space": 1.3,
+        "relative_free_space": 1.5
+      },
+      "knowledge_probability": 0.5,
+      "uninformed_occupancy_mean": 0.6,
+      "uninformed_occupancy_stddev": 0.15,
+      "frustration_step": 0.35,
+      "stochastic_scale": 0.0
+    }
+  },
+  "search": {
+    "vehicle_count": {
+      "minimum": 3000,
+      "maximum": 7000,
+      "step": 100
+    },
+    "fourier_peak_percent": {
+      "minimum": 0,
+      "maximum": 300,
+      "step": 5,
+      "normalized_mean_percent": 100
+    },
+    "joint_count_radius": 1500,
+    "joint_peak_radius_percent": 100,
+    "joint_origin_exploration": 0.6,
+    "candidate_pool_size": 4096,
+    "expected_improvement_xi": 0.01,
+    "phases": {
+      "volume_routing": {
+        "runs": 24,
+        "initial_design_runs": 12
+      },
+      "shape": {
+        "runs": 32,
+        "initial_design_runs": 12
+      },
+      "joint": {
+        "runs": 16,
+        "initial_design_runs": 8
+      }
+    }
+  },
+  "objective": {
+    "shape": 0.50,
+    "point_rmse": 0.30,
+    "volume": 0.15,
+    "peak_timing": 0.05
+  },
+  "validation": {
+    "candidate_count": 4,
+    "seeds": [20260120, 20260121, 20260122]
+  },
+  "real_world_comparison": {
+    "enabled": true,
+    "sensor_name": "Avenue Paul Langevin",
+    "detector_name": "SUP Detector",
+    "subjects": ["vehicles"],
+    "mode": "weekly_average",
+    "start_weekday": 0,
+    "start_time": "07:00"
+  }
+}

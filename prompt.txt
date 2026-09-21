@@ -1,0 +1,39 @@
+I need to turn in this project soon. So, let's focus on what is important now. I want to be able to match the simulation data to real life data. But I don't know how to really achieve that. One thing I thought that could work is sensitivity analysis. I still don't quite know what is the effect of each parameter. For example, let's go with 8 peak fourier series. I don't know what happens if I keep every single parameter the same but just increase the peak 1 gradually, for example every other fourier peak is at 50%. I start peak 1 from 0%, then 50%, then 100%, then 150%, then 200%, then 250% and 300%. I don't know how it will effect the simulation output. I want to learn this and put it in a mathematical equation. Perhaps we can use something like a hill function ? 
+What I want to do is do this process for every single parameter, for example, there will be 16000 agents in the simulation. 3000 vehicles and 13000 pedestrians. I want to test what happens with 0 residential pedestrians, then 1000, then 2000, then 3000, then 4000, then 5000 up to 13000. I also want to try this with keeping the number of pedestrians the same but increasing the number of vehicles from 0 to 8000 gradually (1000 vehicles per step). Then I also want to test vehicle entry allocations. I want to see when I change one of them how it effects the traffic in other parts of the campus. and I want to figure this out for the each entry. Once these are complete, I want to test Parking-search choice model parameters. Can you write me a script that does this ? Whenever a new parameter is being tested, these should be the default values:
+
+Model: Cite Scientifique TEST 2
+
+Total people: 16000, Vehicles: 3000, Pedestrians: 13000 (4000 residential)
+
+25% each entry allocation
+Usage Policy Classification
+19 January 2026 7am to 7pm
+
+Arriving by car profile: 8 peaks, 100% each, 0.3 width, 10 harmonics
+Pedestrian departure profile: 8 peaks, 100% each, 0.3 width, 10 harmonics
+
+Pedestrian behaviour: Fast
+Execution Mode: SUMO
+
+Parking Search Choice Model:
+    Driving time: 0.8
+    Walking time: 1
+    Total Capacity: 0.8
+    Free-space count: 1.3
+    Free-space ratio: 1.5
+    Occupancy knowledge: 0.5
+    Expected occupancy: 0.6
+    Perception error: 0.15
+    Frustration response: 0.35
+    Choice randomness: 0
+
+And I don't want you to run this script because that could cost many tokens. I just want you to provide me the script and tell me how to run it. 
+
+What will be important is that after all these simulations are done, I want to be able to find how each parameter is effecting the results. 
+And I want this script to be reusable. Currently not all buildings in the simulation are reachable, I will change that in the future.
+The script should also have a progress bar of some sort, it should show me how many are currently running, how many will there be in total.
+And I also want to keep the time each simulation takes, so that in the future I can have an idea on how much time will it take.
+And before the simulation runs, I want it to print how many tests will be done for each parameter. And bear in mind that the simulations or the script can be stopped by interruption, so I want to keep the progress somewhere, and when I try to run the script again, I should be able to say that just run the remaining part.
+And for testing of each parameters, it should print me the minimum value planned, maximum value planned, and the steps like 1000 or 10% etc.
+And all these should be configurable, I may want to increase the maximum number ot change the steps etc.
+if you'd like, you can create a separate folder for this as well if that's a good idea. 
