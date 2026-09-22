@@ -18,6 +18,10 @@ async function responseError(response: Response, fallback: string) {
     return payload?.detail ?? fallback;
   }
 
+  if (response.status === 504 || contentType.includes("text/html")) {
+    return `${fallback} The map provider took too long to respond. Please retry.`;
+  }
+
   const text = await response.text().catch(() => "");
   return text || fallback;
 }

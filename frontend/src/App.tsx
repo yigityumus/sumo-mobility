@@ -163,6 +163,18 @@ function deselectMatchingIds(setter, features, predicate) {
   });
 }
 
+function campusCollectionsFromPayload(payload) {
+  return payload.features
+    ? {
+        buildings: payload.features.buildings ?? EMPTY_COLLECTION,
+        parkingAreas:
+          payload.features.parking_areas ??
+          payload.features.parkingAreas ??
+          EMPTY_COLLECTION,
+      }
+    : convertOsmCampusFeatures(payload.osm);
+}
+
 
 export default function App() {
   const [boundaryFeature, setBoundaryFeature] = useState(null);
@@ -203,6 +215,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [downloadingOsm, setDownloadingOsm] = useState(false);
+  const [refreshingOsm, setRefreshingOsm] = useState(false);
   const [error, setError] = useState("");
   const [requestInfo, setRequestInfo] = useState(null);
   const [dataSourceLabel, setDataSourceLabel] = useState("OpenStreetMap via Overpass API");
@@ -317,6 +330,7 @@ export default function App() {
         selectedBuildingIds,
         selectedParkingIds,
         sourceOsmFilename,
+        requestInfo,
         parkingSpecs,
         buildingClassifications,
         parkingClassifications,
@@ -332,6 +346,7 @@ export default function App() {
       selectedBuildingIds,
       selectedParkingIds,
       sourceOsmFilename,
+      requestInfo,
       parkingSpecs,
       buildingClassifications,
       parkingClassifications,
@@ -489,15 +504,7 @@ export default function App() {
   }, [navigateTo, resetLoadedFeatures, resetLoadProgress]);
 
   const applyOsmPayload = useCallback((payload, sourceLabel, info) => {
-    const converted = payload.features
-      ? {
-          buildings: payload.features.buildings ?? EMPTY_COLLECTION,
-          parkingAreas:
-            payload.features.parking_areas ??
-            payload.features.parkingAreas ??
-            EMPTY_COLLECTION,
-        }
-      : convertOsmCampusFeatures(payload.osm);
+    const converted = campusCollectionsFromPayload(payload);
 
     const buildingIds = converted.buildings.features.map(getFeatureId);
     const parkingIds = converted.parkingAreas.features.map(getFeatureId);
@@ -655,6 +662,104 @@ export default function App() {
     }
   };
 
+  const refreshOsmArea = async () => {
+    if (!boundaryFeature || !currentModelId) {
+      setError("Save a boundary-based model before refreshing its OSM area.");
+      return;
+    }
+    if (!window.confirm(
+      "Fetch the latest OpenStreetMap data for this exact boundary? Existing selections and specifications will be preserved for matching OSM IDs. New features will remain unselected until you review them.",
+    )) {
+      return;
+    }
+
+    setError("");
+    setRefreshingOsm(true);
+    try {
+      const coordinates = extractOuterRing(boundaryFeature);
+      const freshOsmBlob = await downloadOsmExtract(coordinates);
+      const refreshedFilename = sourceOsmFilename || "area_osm_extract.osm.xml";
+      const parseFile = new File(
+        [freshOsmBlob],
+        refreshedFilename,
+        { type: freshOsmBlob.type || "application/xml" },
+      );
+      const payload = await uploadOsmFileApi(parseFile);
+      const converted = campusCollectionsFromPayload(payload);
+
+      const previousBuildingIds = new Set<string>(buildings.features.map(getFeatureId));
+      const previousParkingIds = new Set<string>(parkingAreas.features.map(getFeatureId));
+      const refreshedBuildingIds = new Set<string>(converted.buildings.features.map(getFeatureId));
+      const refreshedParkingIds = new Set<string>(converted.parkingAreas.features.map(getFeatureId));
+      const refreshedBuildingById = new Map(
+        converted.buildings.features.map((feature) => [getFeatureId(feature), feature]),
+      );
+
+      const nextSelectedBuildingIds = new Set(
+        [...selectedBuildingIds].filter((id) => refreshedBuildingIds.has(String(id))),
+      );
+      const nextSelectedParkingIds = new Set(
+        [...selectedParkingIds].filter((id) => refreshedParkingIds.has(String(id))),
+      );
+      const nextBuildingClassifications = normalizeBuildingClassifications(
+        converted.buildings,
+        buildingClassifications,
+      );
+      const nextParkingClassifications = normalizeParkingClassifications(
+        converted.parkingAreas,
+        parkingClassifications,
+      );
+      const nextPublicTransportOrigins = publicTransportOrigins === undefined
+        ? undefined
+        : publicTransportOrigins.flatMap((origin) => {
+            if (origin.sourceType !== "building" || !origin.buildingId) return [origin];
+            const feature = refreshedBuildingById.get(String(origin.buildingId));
+            if (!feature) return [];
+            return [{ ...origin, location: featureLocation(feature) }];
+          });
+
+      const refreshSummary = {
+        buildingsAdded: [...refreshedBuildingIds].filter((id) => !previousBuildingIds.has(id)).length,
+        buildingsRemoved: [...previousBuildingIds].filter((id) => !refreshedBuildingIds.has(id)).length,
+        parkingAdded: [...refreshedParkingIds].filter((id) => !previousParkingIds.has(id)).length,
+        parkingRemoved: [...previousParkingIds].filter((id) => !refreshedParkingIds.has(id)).length,
+        buildingSelectionsRemoved: selectedBuildingIds.size - nextSelectedBuildingIds.size,
+        parkingSelectionsRemoved: selectedParkingIds.size - nextSelectedParkingIds.size,
+        buildingOriginsRemoved:
+          (publicTransportOrigins?.length ?? 0) - (nextPublicTransportOrigins?.length ?? 0),
+      };
+
+      setBuildings(converted.buildings);
+      setParkingAreas(converted.parkingAreas);
+      setSelectedBuildingIds(nextSelectedBuildingIds);
+      setSelectedParkingIds(nextSelectedParkingIds);
+      setParkingSpecs(buildParkingSpecs(converted.parkingAreas, parkingSpecs));
+      setBuildingClassifications(nextBuildingClassifications);
+      setParkingClassifications(nextParkingClassifications);
+      setPublicTransportOrigins(nextPublicTransportOrigins);
+      setDetectorCandidates(emptyDetectorCandidates());
+      setVehicleGenerationCandidates([]);
+      setSourceOsmBlob(freshOsmBlob);
+      setSourceOsmFilename(refreshedFilename);
+      setSourceOsmIsUploaded(false);
+      setDataSourceLabel("OpenStreetMap via Overpass API (refreshed)");
+      setRequestInfo({
+        source: "osm-refresh",
+        refreshedAt: new Date().toISOString(),
+        stats: payload.stats ?? null,
+        refreshSummary,
+      });
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not refresh the OpenStreetMap area.",
+      );
+    } finally {
+      setRefreshingOsm(false);
+    }
+  };
+
   const fetchCurrentOsmBlob = async () => {
     if (sourceOsmBlob) {
       return sourceOsmBlob;
@@ -732,6 +837,7 @@ export default function App() {
           selectedBuildingIds: model.selectedBuildingIds,
           selectedParkingIds: model.selectedParkingIds,
           sourceOsmFilename: model.sourceOsmFilename,
+          requestInfo: model.requestInfo,
           parkingSpecs: model.parkingSpecs,
           buildingClassifications: model.buildingClassifications,
           parkingClassifications: model.parkingClassifications,
@@ -842,6 +948,7 @@ export default function App() {
           selectedBuildingIds: model.selectedBuildingIds ?? [],
           selectedParkingIds: model.selectedParkingIds ?? [],
           sourceOsmFilename: model.sourceOsmFilename ?? "area_osm_extract.osm.xml",
+          requestInfo: model.requestInfo,
           parkingSpecs: loadedParkingSpecs,
           buildingClassifications: loadedBuildingClassifications,
           parkingClassifications: loadedParkingClassifications,
@@ -1010,6 +1117,7 @@ export default function App() {
               selectedParkingIds: renamedModel.selectedParkingIds ?? [],
               sourceOsmFilename:
                 renamedModel.sourceOsmFilename ?? "area_osm_extract.osm.xml",
+              requestInfo: renamedModel.requestInfo,
               parkingSpecs: loadedParkingSpecs,
               buildingClassifications: normalizeBuildingClassifications(
                 renamedModel.buildings ?? EMPTY_COLLECTION,
@@ -1073,6 +1181,7 @@ export default function App() {
             selectedBuildingIds: model.selectedBuildingIds ?? [...selectedBuildingIds],
             selectedParkingIds: model.selectedParkingIds ?? [...selectedParkingIds],
             sourceOsmFilename: model.sourceOsmFilename ?? sourceOsmFilename,
+            requestInfo: model.requestInfo ?? requestInfo,
             parkingSpecs: loadedParkingSpecs,
             buildingClassifications,
             parkingClassifications,
@@ -1153,6 +1262,7 @@ export default function App() {
             selectedBuildingIds: model.selectedBuildingIds ?? [...selectedBuildingIds],
             selectedParkingIds: model.selectedParkingIds ?? [...selectedParkingIds],
             sourceOsmFilename: model.sourceOsmFilename ?? sourceOsmFilename,
+            requestInfo: model.requestInfo ?? requestInfo,
             parkingSpecs: loadedParkingSpecs,
             buildingClassifications,
             parkingClassifications,
@@ -1344,6 +1454,7 @@ export default function App() {
     loading ||
     uploading ||
     downloadingOsm ||
+    refreshingOsm ||
     savingModel ||
     loadingModel ||
     exportingAll ||
@@ -2023,6 +2134,7 @@ export default function App() {
       loading={loading}
       uploading={uploading}
       downloadingOsm={downloadingOsm}
+      refreshingOsm={refreshingOsm}
       loadProgress={loadProgress}
       busy={busy}
       error={error}
@@ -2109,6 +2221,7 @@ export default function App() {
       loadFeatures={loadFeatures}
       uploadOsmFile={uploadOsmFile}
       downloadSelectedAreaOsm={downloadSelectedAreaOsm}
+      refreshOsmArea={refreshOsmArea}
       setSelectedBuildingIds={setSelectedBuildingIds}
       setSelectedParkingIds={setSelectedParkingIds}
       selectFilteredIds={selectFilteredIds}

@@ -1,5 +1,5 @@
 import { useEffect, useState, type DragEvent, type ReactNode } from "react";
-import { BusFront, ChevronDown, CircleHelp, Download, FileUp, Home, MapPinned, PanelLeftClose, PanelLeftOpen, Play, Save } from "lucide-react";
+import { BusFront, ChevronDown, CircleHelp, Download, FileUp, Home, MapPinned, PanelLeftClose, PanelLeftOpen, Play, RefreshCw, Save } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
@@ -79,6 +79,7 @@ type AppSidebarProps = {
   loading: boolean;
   uploading: boolean;
   downloadingOsm: boolean;
+  refreshingOsm: boolean;
   loadProgress: LoadProgressState;
   busy: boolean;
   error: string;
@@ -152,6 +153,7 @@ type AppSidebarProps = {
   onLoadFeatures: () => void;
   onUploadOsmFile: (file: File) => void;
   onDownloadSelectedAreaOsm: () => void;
+  onRefreshOsmArea: () => void;
   onToggleBuilding: (id: string) => void;
   onToggleParking: (id: string) => void;
   onSelectAllBuildings: () => void;
@@ -210,6 +212,7 @@ export default function AppSidebar({
   loading,
   uploading,
   downloadingOsm,
+  refreshingOsm,
   loadProgress,
   busy,
   error,
@@ -283,6 +286,7 @@ export default function AppSidebar({
   onLoadFeatures,
   onUploadOsmFile,
   onDownloadSelectedAreaOsm,
+  onRefreshOsmArea,
   onToggleBuilding,
   onToggleParking,
   onSelectAllBuildings,
@@ -436,6 +440,12 @@ export default function AppSidebar({
       {requestInfo.source === "upload" && (
         <>Loaded {buildings.features.length} buildings and {parkingAreas.features.length} parking areas from {requestInfo.filename}.</>
       )}
+      {requestInfo.source === "osm-refresh" && (() => {
+        const summary = requestInfo.refreshSummary as Record<string, number> | undefined;
+        return (
+          <>Updated this boundary from OpenStreetMap: {buildings.features.length} buildings and {parkingAreas.features.length} parking areas. Added {summary?.buildingsAdded ?? 0} building(s) and {summary?.parkingAdded ?? 0} parking area(s); removed {summary?.buildingsRemoved ?? 0} building(s) and {summary?.parkingRemoved ?? 0} parking area(s). Review and save the model.</>
+        );
+      })()}
     </InfoMessage>
   );
 
@@ -735,6 +745,18 @@ export default function AppSidebar({
             </div>
 
             <div className="grid gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || !currentModelId || !boundaryReady}
+                onClick={onRefreshOsmArea}
+              >
+                <RefreshCw className={cn("size-4", refreshingOsm && "animate-spin")} />
+                {refreshingOsm ? "Updating OSM area…" : "Update OSM area"}
+              </Button>
+              <p className="text-xs leading-5 text-muted-foreground">
+                Fetch the latest OSM data for the same boundary. Matching selections and specifications are preserved; new features remain unselected.
+              </p>
               {hasUnsavedChanges ? (
                 <Tooltip>
                   <TooltipTrigger asChild>

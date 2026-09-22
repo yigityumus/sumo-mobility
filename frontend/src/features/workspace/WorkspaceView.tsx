@@ -60,6 +60,7 @@ export default function WorkspaceView(props: WorkspaceViewProps) {
     loading,
     uploading,
     downloadingOsm,
+    refreshingOsm,
     loadProgress,
     busy,
     error,
@@ -146,6 +147,7 @@ export default function WorkspaceView(props: WorkspaceViewProps) {
     loadFeatures,
     uploadOsmFile,
     downloadSelectedAreaOsm,
+    refreshOsmArea,
     setSelectedBuildingIds,
     setSelectedParkingIds,
     selectFilteredIds,
@@ -252,6 +254,7 @@ export default function WorkspaceView(props: WorkspaceViewProps) {
           loading={loading}
           uploading={uploading}
           downloadingOsm={downloadingOsm}
+          refreshingOsm={refreshingOsm}
           loadProgress={loadProgress}
           busy={busy}
           error={error}
@@ -328,6 +331,7 @@ export default function WorkspaceView(props: WorkspaceViewProps) {
           onLoadFeatures={loadFeatures}
           onUploadOsmFile={uploadOsmFile}
           onDownloadSelectedAreaOsm={downloadSelectedAreaOsm}
+          onRefreshOsmArea={refreshOsmArea}
           onToggleBuilding={(id: string) => toggleId(setSelectedBuildingIds, id)}
           onToggleParking={(id: string) => toggleId(setSelectedParkingIds, id)}
           onSelectAllBuildings={() =>

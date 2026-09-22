@@ -26,7 +26,12 @@ class Settings(BaseSettings):
         "sumo-area-builder/0.2 "
         "(local development; set OSM_USER_AGENT in backend/.env)"
     )
+    osm_map_api_endpoint: str = "https://api.openstreetmap.org/api/0.6/map"
+    osm_map_max_bbox_area_degrees: float = 0.01
     overpass_timeout_seconds: float = 90.0
+    # Bound all POST/GET attempts against one replica so a slow endpoint cannot
+    # consume the gateway's entire request window before backups are tried.
+    overpass_endpoint_budget_seconds: float = 45.0
     cache_ttl_seconds: int = 600
     max_boundary_vertices: int = 500
     max_boundary_span_degrees: float = 0.25
