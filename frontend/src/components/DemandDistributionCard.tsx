@@ -1,11 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
 import { Slider } from "./ui/slider";
 import type { BuildingClassification } from "../types/campus";
 
 type DemandDistributionCardProps = {
   classification: BuildingClassification | null;
   busy: boolean;
-  onChange: (classificationId: string, typeId: string, mode: "pedestrian" | "vehicle", value: number) => void;
+  onChange: (classificationId: string, typeId: string, mode: "pedestrian" | "vehicle" | "capacityConstant", value: number) => void;
 };
 
 export default function DemandDistributionCard({
@@ -28,7 +30,7 @@ export default function DemandDistributionCard({
       <CardContent className="flex-1 overflow-y-auto p-4 pt-2">
         <div className="space-y-2">
           <p className="rounded-md bg-muted/50 p-2 text-[11px] leading-4 text-muted-foreground">
-            These values weight destination building types for people arriving on foot or by car. Names are unrestricted. Unassigned buildings use neutral 50/50 weights and remain eligible through equal random treatment.
+            Destination capacity is footprint area × building levels × the type constant. The pedestrian/vehicle split then provides the mode-specific destination weight. Unassigned buildings use a constant of 1 and a neutral 50/50 split.
           </p>
           {(classification.types ?? []).length === 0 && (
             <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
@@ -37,7 +39,11 @@ export default function DemandDistributionCard({
           )}
 
           {(classification.types ?? []).map((type) => {
-            const distribution = classification.demandDistribution?.[type.id] ?? { pedestrian: 50, vehicle: 50 };
+            const distribution = classification.demandDistribution?.[type.id] ?? {
+              pedestrian: 50,
+              vehicle: 50,
+              capacityConstant: 1,
+            };
 
             return (
               <div key={type.id} className="rounded-lg border px-2.5 py-2">
@@ -56,6 +62,25 @@ export default function DemandDistributionCard({
                     aria-label={`${type.name} pedestrian percentage`}
                     onValueChange={([nextValue]) => {
                       onChange(classification.id, type.id, "pedestrian", nextValue);
+                    }}
+                  />
+                </div>
+                <div className="mt-3 grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-3">
+                  <Label htmlFor={`capacity-constant-${type.id}`} className="text-xs text-muted-foreground">
+                    Capacity constant
+                  </Label>
+                  <Input
+                    id={`capacity-constant-${type.id}`}
+                    type="number"
+                    min={0}
+                    step="any"
+                    inputMode="decimal"
+                    value={distribution.capacityConstant ?? 1}
+                    disabled={busy}
+                    aria-label={`${type.name} capacity constant`}
+                    onChange={(event) => {
+                      if (event.target.value === "") return;
+                      onChange(classification.id, type.id, "capacityConstant", Number(event.target.value));
                     }}
                   />
                 </div>

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import subprocess
 import tempfile
@@ -65,6 +66,92 @@ def _feature_name(feature: dict) -> str:
     properties = feature.get("properties") or {}
     tags = properties.get("tags") if isinstance(properties.get("tags"), dict) else {}
     return str(properties.get("name") or tags.get("name") or _feature_id(feature) or "Unnamed building")
+
+
+def _feature_tags(feature: dict) -> dict:
+    properties = feature.get("properties") or {}
+    tags = properties.get("tags")
+    return tags if isinstance(tags, dict) else properties
+
+
+def _building_levels(feature: dict) -> float:
+    """Return OSM building:levels, defaulting missing legacy data to one level."""
+    raw_value = _feature_tags(feature).get("building:levels", 1)
+    try:
+        levels = float(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return 1.0
+    return levels if math.isfinite(levels) and levels >= 0 else 1.0
+
+
+def _ring_area_square_metres(ring: list) -> float:
+    coordinates = [
+        (float(point[0]), float(point[1]))
+        for point in ring
+        if isinstance(point, (list, tuple)) and len(point) >= 2
+    ]
+    if len(coordinates) < 3:
+        return 0.0
+
+    earth_radius_m = 6_371_008.8
+    reference_lon = sum(point[0] for point in coordinates) / len(coordinates)
+    reference_lat = sum(point[1] for point in coordinates) / len(coordinates)
+    cos_latitude = math.cos(math.radians(reference_lat))
+    projected = [
+        (
+            earth_radius_m * math.radians(longitude - reference_lon) * cos_latitude,
+            earth_radius_m * math.radians(latitude - reference_lat),
+        )
+        for longitude, latitude in coordinates
+    ]
+    return abs(sum(
+        first[0] * second[1] - second[0] * first[1]
+        for first, second in zip(projected, projected[1:] + projected[:1])
+    )) / 2
+
+
+def _polygon_area_square_metres(rings: list) -> float:
+    if not rings:
+        return 0.0
+    outer_area = _ring_area_square_metres(rings[0])
+    holes_area = sum(_ring_area_square_metres(ring) for ring in rings[1:])
+    return max(outer_area - holes_area, 0.0)
+
+
+def _building_footprint_area_square_metres(feature: dict) -> float:
+    geometry = feature.get("geometry") or {}
+    coordinates = geometry.get("coordinates") or []
+    if geometry.get("type") == "Polygon":
+        return _polygon_area_square_metres(coordinates)
+    if geometry.get("type") == "MultiPolygon":
+        return sum(_polygon_area_square_metres(polygon) for polygon in coordinates)
+    return 0.0
+
+
+def _capacity_constant(distribution: dict) -> float:
+    raw_value = distribution.get("capacityConstant", 1)
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return 1.0
+    return max(value, 0.0) if math.isfinite(value) else 1.0
+
+
+def _destination_capacity_profile(feature: dict, distribution: dict) -> dict:
+    footprint_area = _building_footprint_area_square_metres(feature)
+    levels = _building_levels(feature)
+    capacity_constant = _capacity_constant(distribution)
+    destination_capacity = footprint_area * levels * capacity_constant
+    pedestrian_share = max(0, float(distribution.get("pedestrian", 50))) / 100
+    vehicle_share = max(0, float(distribution.get("vehicle", 50))) / 100
+    return {
+        "footprint_area_square_metres": round(footprint_area, 3),
+        "building_levels": levels,
+        "capacity_constant": capacity_constant,
+        "destination_capacity": round(destination_capacity, 3),
+        "pedestrian_weight": destination_capacity * pedestrian_share,
+        "vehicle_weight": destination_capacity * vehicle_share,
+    }
 
 
 def _lane_position(lane, point: tuple[float, float]) -> tuple[float, float]:
@@ -429,7 +516,7 @@ def resolve(model_snapshot: Path, network_path: Path, scenario_path: Path, parki
             distributions.get(type_id)
             if is_classified
             else None
-        ) or {"pedestrian": 50, "vehicle": 50}
+        ) or {"pedestrian": 50, "vehicle": 50, "capacityConstant": 1}
         item = {
             "id": building_id,
             "name": _feature_name(feature),
@@ -437,14 +524,14 @@ def resolve(model_snapshot: Path, network_path: Path, scenario_path: Path, parki
             "latitude": latitude,
             "classification_type_id": type_id if is_classified else "",
             "classification_type_name": type_name if is_classified else "Unclassified",
-            "pedestrian_weight": max(0, float(distribution.get("pedestrian", 50))),
-            "vehicle_weight": max(0, float(distribution.get("vehicle", 50))),
+            **_destination_capacity_profile(feature, distribution),
             "_candidates": candidates,
         }
         # Every selected building is a valid destination. A selected
-        # classification only changes its demand weights; it never filters
-        # destinations out. Unassigned buildings therefore keep the neutral
-        # 50/50 weights above and receive equal random treatment.
+        # classification changes its mode split and capacity constant; it never
+        # removes a selected building from the resolved destination inventory.
+        # A zero resulting capacity does, however, give that building zero
+        # probability when agents are assigned destinations.
         unresolved_destinations.append(item)
         if type_key in origin_config_by_type:
             origin_item = {**item, **origin_config_by_type[type_key]}

@@ -14,6 +14,7 @@ export type AnalyticsChartSeries = {
   points: ChartPoint[];
   strokeDasharray?: string;
   strokeWidth?: number;
+  showDots?: boolean;
 };
 
 type Props = {
@@ -129,7 +130,7 @@ export default function AnalyticsLineChart({
                 stroke={item.color}
                 strokeWidth={item.strokeWidth ?? (visibleSeries.length > 1 ? 2.25 : 3)}
                 strokeDasharray={item.strokeDasharray}
-                dot={visibleSeries.length === 1 && item.points.length <= 60}
+                dot={item.showDots ?? (visibleSeries.length === 1 && item.points.length <= 60)}
                 connectNulls
               />
             ))}

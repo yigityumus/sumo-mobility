@@ -94,12 +94,47 @@ export default function ParkingDestinationAnalysis({
     [capacityMetric, comparedResults, parkingId],
   );
 
+  const destinationSelectionSeries = useMemo<AnalyticsChartSeries[]>(() => {
+    const points = selectedBuilding?.destination_time_series ?? [];
+    if (!points.length) return [];
+    const intervalSeconds = data?.destination_interval_seconds ?? 900;
+    const pointByTime = new Map(points.map((point) => [point.time_seconds, point]));
+    const durationSeconds = Math.max(
+      comparedResults[0]?.run.duration_seconds ?? 0,
+      points[points.length - 1].time_seconds + intervalSeconds,
+    );
+    const completePoints = Array.from(
+      { length: Math.ceil(durationSeconds / intervalSeconds) },
+      (_value, index) => pointByTime.get(index * intervalSeconds) ?? {
+        time_seconds: index * intervalSeconds,
+        pedestrian_count: 0,
+        vehicle_count: 0,
+      },
+    );
+    return [
+      {
+        id: "destination_pedestrians",
+        label: "Pedestrians",
+        color: "#2563eb",
+        showDots: false,
+        points: completePoints.map((point) => ({ x: point.time_seconds, y: point.pedestrian_count })),
+      },
+      {
+        id: "destination_drivers",
+        label: "Drivers",
+        color: "#f97316",
+        showDots: false,
+        points: completePoints.map((point) => ({ x: point.time_seconds, y: point.vehicle_count })),
+      },
+    ];
+  }, [comparedResults, data?.destination_interval_seconds, selectedBuilding]);
+
   if (!data?.available) {
     return (
       <Card className="shadow-sm">
         <CardHeader className="p-4">
           <CardTitle className="flex items-center gap-2"><Building2 className="size-5 text-primary" /> Parking and destination buildings</CardTitle>
-          <CardDescription>This older run has no vehicle-to-building plan to join with its parking outcomes. New simulations record this automatically.</CardDescription>
+          <CardDescription>This older run has no agent-to-building destination plan. New simulations record driver and pedestrian destinations automatically.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -141,12 +176,14 @@ export default function ParkingDestinationAnalysis({
         <CardDescription className="mt-1">Aggregated relationships between intended buildings, initial parking choices, and parking areas actually used.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 p-4 pt-0">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
           <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Drivers planned</span><strong>{data.summary.planned_vehicle_people.toLocaleString()}</strong></div>
+          <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Pedestrians planned</span><strong>{(data.summary.planned_pedestrian_people ?? 0).toLocaleString()}</strong></div>
           <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Actually parked</span><strong>{data.summary.parked_people.toLocaleString()}</strong></div>
           <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Unserved</span><strong>{data.summary.unserved_people.toLocaleString()}</strong></div>
           <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Selected destinations</span><strong>{data.summary.destination_buildings.toLocaleString()}</strong></div>
           <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Received drivers</span><strong>{data.summary.buildings_receiving_drivers.toLocaleString()}</strong></div>
+          <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Received pedestrians</span><strong>{(data.summary.buildings_receiving_pedestrians ?? 0).toLocaleString()}</strong></div>
           <div className="rounded-lg bg-muted/60 p-2.5"><span className="block text-xs text-muted-foreground">Unused parking areas</span><strong>{data.summary.unused_parking_areas.toLocaleString()}</strong></div>
         </div>
 
@@ -218,18 +255,22 @@ export default function ParkingDestinationAnalysis({
               <Select value={buildingId} onValueChange={setBuildingId}>
                 <SelectTrigger className="mt-1.5 h-10 font-normal"><SelectValue /></SelectTrigger>
                 <SelectContent>{data.buildings.map((building) => (
-                  <SelectItem key={building.id} value={building.id}>{building.name} · {building.planned_vehicle_people.toLocaleString()} drivers</SelectItem>
+                  <SelectItem key={building.id} value={building.id}>
+                    {building.name} · capacity {Number((building.destination_capacity ?? 0).toFixed(2)).toLocaleString()} · {building.planned_vehicle_people.toLocaleString()} drivers · {(building.planned_pedestrian_people ?? 0).toLocaleString()} pedestrians
+                  </SelectItem>
                 ))}</SelectContent>
               </Select>
             </label>
             {selectedBuilding && (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
                 <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Drivers destined here</span><strong>{selectedBuilding.planned_vehicle_people.toLocaleString()}</strong></div>
+                <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Pedestrians destined here</span><strong>{(selectedBuilding.planned_pedestrian_people ?? 0).toLocaleString()}</strong></div>
                 <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Actually parked</span><strong>{selectedBuilding.parked_people.toLocaleString()}</strong></div>
                 <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Parking areas used</span><strong>{selectedBuilding.parking_area_count.toLocaleString()}</strong></div>
                 <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Unserved</span><strong>{selectedBuilding.unserved_people.toLocaleString()}</strong></div>
                 <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Eligible parking areas</span><strong>{selectedBuilding.eligible_parking_area_count.toLocaleString()}</strong></div>
                 <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Vehicle demand weight</span><strong>{Number(selectedBuilding.vehicle_weight.toFixed(2))}</strong></div>
+                <div className="rounded-lg border p-2.5"><span className="block text-xs text-muted-foreground">Destination capacity</span><strong>{Number((selectedBuilding.destination_capacity ?? 0).toFixed(2)).toLocaleString()}</strong></div>
               </div>
             )}
             {selectedBuilding?.zero_driver_reason && (
@@ -239,7 +280,27 @@ export default function ParkingDestinationAnalysis({
                 <AlertDescription>{selectedBuilding.zero_driver_reason}</AlertDescription>
               </Alert>
             )}
-            {distributionPanel}
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              {distributionPanel}
+              <div className="min-w-0 rounded-lg border p-3">
+                <div className="mb-2">
+                  <h3 className="text-sm font-semibold">Destination selections over time</h3>
+                  <p className="text-xs text-muted-foreground">Drivers and standalone pedestrians assigned to this building, grouped into 15-minute intervals by planned departure time.</p>
+                </div>
+                {destinationSelectionSeries.length ? (
+                  <AnalyticsLineChart
+                    series={destinationSelectionSeries}
+                    xLabel={calendarStartAt ? "Simulated date and time" : "Simulation time"}
+                    yLabel="Destination selections per 15 minutes"
+                    formatY={(value) => Math.round(value).toLocaleString()}
+                    calendarStartAt={calendarStartAt}
+                    calendarTimezone={calendarTimezone}
+                  />
+                ) : (
+                  <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No destination departure-time data exists for this building.</div>
+                )}
+              </div>
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>

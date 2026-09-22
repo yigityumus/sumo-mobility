@@ -1879,16 +1879,21 @@ export default function App() {
       .map((typeName) => String(typeName ?? "").trim())
       .filter(Boolean)
       .slice(0, 10);
+    const types = typeNames.map((typeName) => ({
+      id: crypto.randomUUID(),
+      name: typeName,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }));
     const nextClassification = {
       id: crypto.randomUUID(),
       name: classificationName,
-      types: typeNames.map((typeName) => ({
-        id: crypto.randomUUID(),
-        name: typeName,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      })),
+      types,
       assignments: {},
+      demandDistribution: Object.fromEntries(types.map((type) => [
+        type.id,
+        { pedestrian: 50, vehicle: 50, capacityConstant: 1 },
+      ])),
       createdAt: timestamp,
       updatedAt: timestamp,
     };

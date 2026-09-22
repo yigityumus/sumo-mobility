@@ -50,7 +50,7 @@ const modelRows: Row[] = [
   { name: "Select buildings", meaning: "Chooses candidate destinations.", effect: "More buildings create more destinations, although disconnected buildings may be excluded during route preparation." },
   { name: "Select parking areas", meaning: "Chooses facilities generated in SUMO.", effect: "Selection, capacity, and road connection determine available parking supply." },
   { name: "Configuration buttons", meaning: "Open Building Specs, Parking Specs, Origins, Detectors, or Simulation.", effect: "Each edits a different layer: destinations, supply, entry locations, measurement, or run-time demand." },
-  { name: "Demand Distribution overlay", meaning: "For an active building classification, sliders split each type's relative pedestrian/vehicle destination weight.", effect: "Higher vehicle weight makes that type relatively more likely for drivers. It does not change total people. Unassigned buildings use neutral 50/50 weighting." },
+  { name: "Demand Distribution overlay", meaning: "For each building type, the slider splits destination capacity between pedestrian and vehicle demand, while the capacity constant scales floor area × building levels.", effect: "The resulting mode-specific capacity is used as the destination probability weight. A constant of 0 prevents that type from receiving destinations. Unassigned buildings use constant 1 and a neutral 50/50 split." },
   { name: "Download model", meaning: "Exports chosen OSM, building, parking, and model-config files in a ZIP.", effect: "Use it to archive, inspect, or share inputs independently of results." },
   { name: "Duplicate / Rename / Delete", meaning: "Actions on saved model cards on Home.", effect: "Duplicate before experimental changes. Delete is destructive; completed runs retain their own snapshots." },
 ];
@@ -88,9 +88,9 @@ const parkingRows: Row[] = [
 
 const buildingRows: Row[] = [
   { name: "Classification", meaning: "An optional labeling system such as Usage Policy.", effect: "A run selects one system. Multiple systems support different research questions on the same buildings." },
-  { name: "Type", meaning: "A category such as Teaching, Office, Residential, or Laboratory.", effect: "Assigned buildings inherit that type's destination weights." },
+  { name: "Type", meaning: "A category such as Teaching, Office, Residential, or Laboratory.", effect: "Assigned buildings inherit that type's pedestrian/vehicle split and capacity constant." },
   { name: "Assignment", meaning: "Gives a selected building one type in the active classification.", effect: "It changes relative destination probability, not population size." },
-  { name: "Unknown / unspecified", meaning: "No type is assigned.", effect: "The building remains eligible with neutral 50/50 weights and equal random treatment." },
+  { name: "Unknown / unspecified", meaning: "No type is assigned.", effect: "The building remains eligible with constant 1 and a neutral 50/50 split; its footprint area and levels still determine capacity." },
   { name: "Residential", meaning: "The one reserved type name, matched case-insensitively.", effect: "Assigned selected buildings may also act as origins for Residential walkers." },
   { name: "Search", meaning: "Filters by name, description, or OSM ID.", effect: "It changes only the visible list, not selection or assignments." },
   { name: "Delete classification", meaning: "Removes it and its assignments after save.", effect: "Future runs cannot select it; completed runs retain their snapshot." },
@@ -101,7 +101,7 @@ const simulationRows: Row[] = [
   { name: "By car", meaning: "One person driving one car.", effect: "After successful parking, the same person becomes a pedestrian; this is not an extra person." },
   { name: "Independent walkers", meaning: "People generated without a car.", effect: "They must be allocated between Residential and Public transport origins." },
   { name: "Vehicle entry allocation", meaning: "Percentages or exact counts across all saved car origins.", effect: "Must total 100% or all cars. It changes approach roads, detector traffic, and parking pressure." },
-  { name: "Building classification", meaning: "Destination weighting used by this run.", effect: "No classification gives all selected reachable buildings equal random treatment." },
+  { name: "Building classification", meaning: "Destination weighting used by this run.", effect: "No classification uses floor area × building levels with constant 1 and a neutral 50/50 split." },
   { name: "Walking sources", meaning: "Residential, Public transport, and read-only Parked-car drivers.", effect: "Residential + transit equals independent walkers. A parked-driver walk exists only after successful parking." },
   { name: "Start and duration", meaning: "Calendar time for second zero and a 1–168 hour demand window.", effect: "Controls chart labels and physical-data alignment. Travelling agents may finish after the demand window." },
   { name: "Constant / Linear / Normal", meaning: "Uniform, increasing, or midpoint bell-shaped generation.", effect: "They redistribute a fixed total over time without editable individual peaks." },
@@ -147,6 +147,7 @@ const analyticsControlRows: Row[] = [
 const analyticsGraphs: Graph[] = [
   { title: "Parking → buildings", axes: "Bars list destination buildings; length/count is parked people.", meaning: "Where people who actually used one parking area intended to go. Cards show candidate, initial choice, parked, rerouted, and capacity counts.", use: "Understand which destinations a lot serves and whether it was never eligible, rarely chosen, full, or rerouted away." },
   { title: "Building → parkings", axes: "Bars list actual parking outcomes and counts.", meaning: "Where drivers destined for one building parked, including Did not park.", use: "Find dependence on particular lots and unserved destination demand." },
+  { title: "Destination selections over time", axes: "X is planned departure time; Y is destination assignments per 15-minute interval.", meaning: "Separate lines show drivers and standalone pedestrians assigned to the selected building. The selector reports its final destination capacity: footprint area × levels × classification constant.", use: "Compare when each mode creates demand for a destination and relate the counts to its final capacity." },
   { title: "Parking capacity over time", axes: "X is simulated time; Y is occupied or empty capacity, 0–100%.", meaning: "Parked cars only; approaching and queued cars are excluded. Comparisons overlay other runs.", use: "Explain rejection/fallback near 100%, or investigate route/choice issues when a lot stays empty." },
   { title: "Parking areas attempted", axes: "X is distinct lots attempted per car; Y is number of cars.", meaning: "Histogram of search and fallback before parking or exhausting choices.", use: "A peak at 1 means direct parking; a long tail suggests capacity, information, or first-choice problems." },
   { title: "Recorded parking search duration", axes: "X is time; Y is binned average minutes.", meaning: "Line values are bin averages; summary median/P95 are individual-car statistics and may exceed every bin average.", use: "Locate difficult periods and compare them with demand and occupancy." },

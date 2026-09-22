@@ -40,6 +40,30 @@ def period_from_rate(rate_per_hour: float) -> float:
     return 3600.0 / rate_per_hour
 
 
+def _choose_destination_building(
+    rng: random.Random,
+    mode: str,
+    candidate_buildings: list[dict],
+) -> dict:
+    weight_key = "vehicle_weight" if mode == "vehicle" else "pedestrian_weight"
+    weighted_candidates = [
+        (building, max(float(building.get(weight_key, 0)), 0))
+        for building in candidate_buildings
+    ]
+    weighted_candidates = [item for item in weighted_candidates if item[1] > 0]
+    if not weighted_candidates:
+        raise ValueError(
+            f"No eligible destination building has a positive {mode} capacity weight. "
+            "Check building footprint geometry, building:levels, capacity constants, "
+            "and the pedestrian/vehicle ratios."
+        )
+    return rng.choices(
+        [item[0] for item in weighted_candidates],
+        weights=[item[1] for item in weighted_candidates],
+        k=1,
+    )[0]
+
+
 def distributed_departure_times(
     total: int,
     begin: float,
@@ -402,11 +426,7 @@ def generate(
                     "No selected destination building is reachable on foot from "
                     "a selected parking area."
                 )
-        weight_key = "vehicle_weight" if mode == "vehicle" else "pedestrian_weight"
-        weights = [max(float(building.get(weight_key, 0)), 0) for building in candidate_buildings]
-        if not any(weights):
-            weights = [1.0] * len(candidate_buildings)
-        return rng.choices(candidate_buildings, weights=weights, k=1)[0]
+        return _choose_destination_building(rng, mode, candidate_buildings)
 
     def append_vehicle_trip(gen: dict, index: int, depart_time: float) -> None:
         generation_point_id = str(gen["id"])
@@ -504,6 +524,7 @@ def generate(
                 "person_id": f"person.{vehicle_id}",
                 "vehicle_id": vehicle_id,
                 "arrival_mode": "vehicle",
+                "departure_time_seconds": depart_time,
                 "building_id": str(destination_building["id"]),
                 "building_name": str(destination_building["name"]),
                 "destination_edge": str(destination_building["pedestrian_edge_id"]),
@@ -686,6 +707,7 @@ def generate(
                     "person_id": person_id,
                     "vehicle_id": "",
                     "arrival_mode": "pedestrian",
+                    "departure_time_seconds": depart_time,
                     "origin_mode": str(origin["mode"]),
                     "origin_id": str(origin["id"]),
                     "origin_name": str(origin["name"]),
@@ -738,6 +760,7 @@ def generate(
                     "person_id",
                     "vehicle_id",
                     "arrival_mode",
+                    "departure_time_seconds",
                     "origin_mode",
                     "origin_id",
                     "origin_name",

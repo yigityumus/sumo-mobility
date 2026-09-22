@@ -27,7 +27,8 @@ PARKING_CONFIG_PATH = BACKEND_ROOT / "config" / "parking" / "parking_areas.yaml"
 MAX_OCCUPANCY_POINTS = 900
 DETECTOR_COMPARISON_INTERVAL_SECONDS = 15 * 60
 ANALYTICS_SNAPSHOT_FILENAME = "analytics.snapshot.json"
-ANALYTICS_SNAPSHOT_VERSION = 4
+ANALYTICS_SNAPSHOT_VERSION = 6
+DESTINATION_SELECTION_INTERVAL_SECONDS = 15 * 60
 TRIP_SEGMENT_TYPES = (
     "to_parking",
     "inside_parking",
@@ -835,6 +836,25 @@ def _semicolon_values(value: Any) -> list[str]:
     return [item.strip() for item in str(value or "").split(";") if item.strip()]
 
 
+def _route_departure_times(path: Path | None, element_name: str) -> dict[str, float]:
+    if path is None or not path.is_file():
+        return {}
+    departures: dict[str, float] = {}
+    try:
+        for _event, element in ET.iterparse(path, events=("end",)):
+            if element.tag.rsplit("}", 1)[-1] != element_name:
+                element.clear()
+                continue
+            agent_id = str(element.get("id") or "").strip()
+            departure = _number(element.get("depart"))
+            if agent_id and departure is not None:
+                departures[agent_id] = departure
+            element.clear()
+    except (OSError, ET.ParseError):
+        return {}
+    return departures
+
+
 def _parking_destination_results(
     person_plan_path: Path,
     vehicle_plan_path: Path,
@@ -842,6 +862,8 @@ def _parking_destination_results(
     parking_events_path: Path,
     parking_config_snapshot: Path,
     person_access_snapshot: Path | None = None,
+    passenger_routes_path: Path | None = None,
+    pedestrian_routes_path: Path | None = None,
 ) -> dict[str, Any]:
     """Join planned destinations to initial choices and observed parking outcomes."""
     parking_names = _parking_names(parking_config_snapshot)
@@ -860,9 +882,15 @@ def _parking_destination_results(
             continue
         building_id = str(building.get("id") or "").strip()
         if building_id:
+            constant = _number(building.get("capacity_constant"))
             building_metadata[building_id] = {
                 "name": str(building.get("name") or building_id),
                 "vehicle_weight": max(_number(building.get("vehicle_weight")) or 0.0, 0.0),
+                "pedestrian_weight": max(_number(building.get("pedestrian_weight")) or 0.0, 0.0),
+                "capacity_constant": max(constant if constant is not None else 1.0, 0.0),
+                "destination_capacity": max(_number(building.get("destination_capacity")) or 0.0, 0.0),
+                "footprint_area_square_metres": max(_number(building.get("footprint_area_square_metres")) or 0.0, 0.0),
+                "building_levels": max(_number(building.get("building_levels")) or 0.0, 0.0),
                 "eligible_parking_area_count": len({
                     str(candidate.get("parking_id") or "").strip()
                     for candidate in building.get("parking_candidates") or []
@@ -935,22 +963,56 @@ def _parking_destination_results(
                 if vehicle_id and logical_id:
                     final_parkings[vehicle_id] = (logical_id, physical_id)
 
-    person_rows: list[dict[str, str]] = []
+    vehicle_departures = _route_departure_times(passenger_routes_path, "trip")
+    pedestrian_departures = _route_departure_times(pedestrian_routes_path, "person")
+    destination_rows: list[dict[str, Any]] = []
+    person_rows: list[dict[str, Any]] = []
     if person_plan_path.is_file():
         with person_plan_path.open(newline="", encoding="utf-8") as source:
             for row in csv.DictReader(source):
-                if str(row.get("arrival_mode") or "") != "vehicle":
+                arrival_mode = str(row.get("arrival_mode") or "").strip()
+                if arrival_mode not in {"vehicle", "pedestrian"}:
                     continue
                 vehicle_id = str(row.get("vehicle_id") or "").strip()
+                person_id = str(row.get("person_id") or "").strip()
                 building_id = str(row.get("building_id") or "").strip()
-                if not vehicle_id or not building_id:
+                if not building_id:
                     continue
-                person_rows.append({
-                    "person_id": str(row.get("person_id") or f"person.{vehicle_id}"),
+                departure = _number(row.get("departure_time_seconds"))
+                if departure is None:
+                    departure = (
+                        vehicle_departures.get(vehicle_id)
+                        if arrival_mode == "vehicle"
+                        else pedestrian_departures.get(person_id)
+                    )
+                destination = {
+                    "person_id": person_id or (f"person.{vehicle_id}" if vehicle_id else ""),
                     "vehicle_id": vehicle_id,
+                    "arrival_mode": arrival_mode,
                     "building_id": building_id,
                     "building_name": str(row.get("building_name") or building_id),
-                })
+                    "departure_time_seconds": departure,
+                }
+                destination_rows.append(destination)
+                if arrival_mode == "vehicle" and vehicle_id:
+                    person_rows.append(destination)
+
+    destination_totals: dict[tuple[str, str], Counter[str]] = {}
+    destination_buckets: dict[tuple[str, int], Counter[str]] = {}
+    for destination in destination_rows:
+        building_key = (destination["building_id"], destination["building_name"])
+        destination_totals.setdefault(building_key, Counter())[destination["arrival_mode"]] += 1
+        departure = destination.get("departure_time_seconds")
+        if departure is None:
+            continue
+        bucket_start = (
+            int(max(float(departure), 0) // DESTINATION_SELECTION_INTERVAL_SECONDS)
+            * DESTINATION_SELECTION_INTERVAL_SECONDS
+        )
+        destination_buckets.setdefault(
+            (destination["building_id"], bucket_start),
+            Counter(),
+        )[destination["arrival_mode"]] += 1
 
     parking_totals: dict[str, Counter[str]] = {
         parking_id: Counter()
@@ -1098,13 +1160,19 @@ def _parking_destination_results(
         building_id: building_name
         for building_id, building_name in building_totals
     })
+    building_names.update({
+        building_id: building_name
+        for building_id, building_name in destination_totals
+    })
     buildings = []
     for building_id, building_name in sorted(
         building_names.items(), key=lambda item: item[1].casefold()
     ):
         totals = building_totals.get((building_id, building_name), Counter())
+        destination_counts = destination_totals.get((building_id, building_name), Counter())
         metadata = building_metadata.get(building_id, {})
-        planned_people = totals["planned_vehicle_people"]
+        planned_people = destination_counts["vehicle"]
+        planned_pedestrians = destination_counts["pedestrian"]
         zero_driver_reason = None
         if planned_people == 0:
             if int(metadata.get("eligible_parking_area_count") or 0) == 0:
@@ -1124,6 +1192,7 @@ def _parking_destination_results(
             "id": building_id,
             "name": building_name,
             "planned_vehicle_people": planned_people,
+            "planned_pedestrian_people": planned_pedestrians,
             "parked_people": totals["parked_people"],
             "unserved_people": totals["unserved_people"],
             "without_parking_outcome": totals["without_parking_outcome"],
@@ -1132,6 +1201,21 @@ def _parking_destination_results(
                 if key.startswith("parking:") and count > 0
             ),
             "vehicle_weight": float(metadata.get("vehicle_weight") or 0),
+            "pedestrian_weight": float(metadata.get("pedestrian_weight") or 0),
+            "capacity_constant": float(metadata.get("capacity_constant", 1)),
+            "destination_capacity": float(metadata.get("destination_capacity") or 0),
+            "footprint_area_square_metres": float(metadata.get("footprint_area_square_metres") or 0),
+            "building_levels": float(metadata.get("building_levels") or 0),
+            "destination_time_series": [
+                {
+                    "time_seconds": bucket_start,
+                    "vehicle_count": counts["vehicle"],
+                    "pedestrian_count": counts["pedestrian"],
+                }
+                for (series_building_id, bucket_start), counts
+                in sorted(destination_buckets.items())
+                if series_building_id == building_id
+            ],
             "eligible_parking_area_count": int(
                 metadata.get("eligible_parking_area_count") or 0
             ),
@@ -1142,10 +1226,14 @@ def _parking_destination_results(
     parked_people = sum(1 for person in people if person["final_parking_id"])
     unserved_people = sum(1 for person in people if person["status"] == "unserved")
     return {
-        "available": bool(person_rows),
+        "available": bool(destination_rows),
         "outcomes_available": search_times_path.is_file() or parking_events_path.is_file(),
+        "destination_interval_seconds": DESTINATION_SELECTION_INTERVAL_SECONDS,
         "summary": {
             "planned_vehicle_people": len(people),
+            "planned_pedestrian_people": sum(
+                counts["pedestrian"] for counts in destination_totals.values()
+            ),
             "parked_people": parked_people,
             "unserved_people": unserved_people,
             "without_parking_outcome": len(people) - parked_people - unserved_people,
@@ -1153,6 +1241,9 @@ def _parking_destination_results(
             "destination_buildings": len(buildings),
             "buildings_receiving_drivers": sum(
                 1 for building in buildings if building["planned_vehicle_people"] > 0
+            ),
+            "buildings_receiving_pedestrians": sum(
+                1 for building in buildings if building["planned_pedestrian_people"] > 0
             ),
         },
         "parkings": parkings,
@@ -1300,6 +1391,8 @@ def _build_analytics(record: dict[str, Any], run_path: Path) -> dict[str, Any]:
         output_dir / "parking_events.csv",
         run_path.parent / "parking_areas.yaml",
         run_path.parent / "person_access.snapshot.json",
+        run_path.parent / "inputs" / "passenger.rou.xml",
+        run_path.parent / "inputs" / "pedestrian.rou.xml",
     )
     debug = _grouped_log_entries(run_path.parent / "simulation.log")
     detectors = _detector_results(
@@ -1359,6 +1452,8 @@ def get_analytics(model_storage_dir: Path, run_id: str) -> dict[str, Any]:
             for relative_path in (
                 "inputs/person_plan.csv",
                 "inputs/vehicle_parking_plan.csv",
+                "inputs/passenger.rou.xml",
+                "inputs/pedestrian.rou.xml",
                 "outputs/search_times.csv",
                 "outputs/parking_events.csv",
                 "parking_areas.yaml",
@@ -1376,6 +1471,8 @@ def get_analytics(model_storage_dir: Path, run_id: str) -> dict[str, Any]:
                 run_path.parent / "outputs" / "parking_events.csv",
                 run_path.parent / "parking_areas.yaml",
                 run_path.parent / "person_access.snapshot.json",
+                run_path.parent / "inputs" / "passenger.rou.xml",
+                run_path.parent / "inputs" / "pedestrian.rou.xml",
             )
             snapshot_path = run_path.parent / ANALYTICS_SNAPSHOT_FILENAME
             snapshot_path.write_text(

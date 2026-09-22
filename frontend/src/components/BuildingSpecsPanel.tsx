@@ -180,7 +180,7 @@ export default function BuildingSpecsPanel({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold">Classifications</h2>
-            <p className="text-xs text-muted-foreground">Optional labeling systems for demand weighting. Classification and type names are entirely up to you.</p>
+            <p className="text-xs text-muted-foreground">Optional type systems for destination capacity and pedestrian/vehicle weighting. Classification and type names are entirely up to you.</p>
           </div>
           <Badge variant="secondary" className="shrink-0 whitespace-nowrap bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
             {(buildingClassifications ?? []).length} / {MAX_BUILDING_CLASSIFICATIONS}
@@ -315,7 +315,7 @@ export default function BuildingSpecsPanel({
           <div className="flex flex-col gap-2">
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold">Buildings in {activeClassification.name}</h2>
-              <p className="text-xs text-muted-foreground">Assign one type per building when needed. Unassigned buildings remain valid destinations and receive equal random demand treatment.</p>
+              <p className="text-xs text-muted-foreground">Assign one type per building when needed. Unassigned buildings remain valid destinations with a capacity constant of 1 and a neutral 50/50 mode split.</p>
             </div>
             <Badge variant="secondary" className="w-fit shrink-0 whitespace-nowrap bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
               {assignedCount} assigned · {unknownCount} unknown

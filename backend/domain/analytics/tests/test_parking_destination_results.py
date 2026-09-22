@@ -39,18 +39,18 @@ class ParkingDestinationResultTests(unittest.TestCase):
                 "max_access_distance_metres": 100,
                 "accessible_logical_parking_ids": ["p1", "p2", "p4"],
                 "buildings": [
-                    {"id": "b1", "name": "Library", "vehicle_weight": 50, "parking_candidates": [{"parking_id": "p1"}, {"parking_id": "p2"}]},
-                    {"id": "b2", "name": "Laboratory", "vehicle_weight": 50, "parking_candidates": [{"parking_id": "p2"}, {"parking_id": "p4"}]},
+                    {"id": "b1", "name": "Library", "vehicle_weight": 50, "pedestrian_weight": 25, "capacity_constant": 1.5, "destination_capacity": 1000, "parking_candidates": [{"parking_id": "p1"}, {"parking_id": "p2"}]},
+                    {"id": "b2", "name": "Laboratory", "vehicle_weight": 50, "pedestrian_weight": 50, "capacity_constant": 2, "destination_capacity": 2000, "parking_candidates": [{"parking_id": "p2"}, {"parking_id": "p4"}]},
                     {"id": "b3", "name": "Pedestrian hall", "vehicle_weight": 0, "parking_candidates": [{"parking_id": "p1"}]},
                 ],
             }), encoding="utf-8")
             _write_csv(person_plan, [
-                "person_id", "vehicle_id", "arrival_mode", "building_id", "building_name",
+                "person_id", "vehicle_id", "arrival_mode", "departure_time_seconds", "building_id", "building_name",
             ], [
-                {"person_id": "person.v1", "vehicle_id": "v1", "arrival_mode": "vehicle", "building_id": "b1", "building_name": "Library"},
-                {"person_id": "person.v2", "vehicle_id": "v2", "arrival_mode": "vehicle", "building_id": "b1", "building_name": "Library"},
-                {"person_id": "person.v3", "vehicle_id": "v3", "arrival_mode": "vehicle", "building_id": "b2", "building_name": "Laboratory"},
-                {"person_id": "walker", "vehicle_id": "", "arrival_mode": "pedestrian", "building_id": "b2", "building_name": "Laboratory"},
+                {"person_id": "person.v1", "vehicle_id": "v1", "arrival_mode": "vehicle", "departure_time_seconds": 60, "building_id": "b1", "building_name": "Library"},
+                {"person_id": "person.v2", "vehicle_id": "v2", "arrival_mode": "vehicle", "departure_time_seconds": 960, "building_id": "b1", "building_name": "Library"},
+                {"person_id": "person.v3", "vehicle_id": "v3", "arrival_mode": "vehicle", "departure_time_seconds": 1800, "building_id": "b2", "building_name": "Laboratory"},
+                {"person_id": "walker", "vehicle_id": "", "arrival_mode": "pedestrian", "departure_time_seconds": 600, "building_id": "b2", "building_name": "Laboratory"},
             ])
             _write_csv(vehicle_plan, [
                 "vehicle_id", "initial_parking", "parking_candidates_json",
@@ -82,12 +82,14 @@ class ParkingDestinationResultTests(unittest.TestCase):
         self.assertTrue(result["available"])
         self.assertEqual(result["summary"], {
             "planned_vehicle_people": 3,
+            "planned_pedestrian_people": 1,
             "parked_people": 2,
             "unserved_people": 1,
             "without_parking_outcome": 0,
             "unused_parking_areas": 2,
             "destination_buildings": 3,
             "buildings_receiving_drivers": 2,
+            "buildings_receiving_pedestrians": 1,
         })
         parkings = {parking["id"]: parking for parking in result["parkings"]}
         self.assertEqual(parkings["p1"]["initial_choice_people"], 2)
@@ -100,6 +102,13 @@ class ParkingDestinationResultTests(unittest.TestCase):
         buildings = {building["id"]: building for building in result["buildings"]}
         self.assertEqual(buildings["b1"]["parked_people"], 2)
         self.assertEqual(buildings["b1"]["parking_area_count"], 2)
+        self.assertEqual(buildings["b1"]["planned_pedestrian_people"], 0)
+        self.assertEqual(buildings["b1"]["capacity_constant"], 1.5)
+        self.assertEqual(buildings["b2"]["planned_pedestrian_people"], 1)
+        self.assertEqual(buildings["b2"]["destination_time_series"], [
+            {"time_seconds": 0, "vehicle_count": 0, "pedestrian_count": 1},
+            {"time_seconds": 1800, "vehicle_count": 1, "pedestrian_count": 0},
+        ])
         self.assertEqual(buildings["b3"]["planned_vehicle_people"], 0)
         self.assertIn("0 vehicle weight", buildings["b3"]["zero_driver_reason"])
         flows = {
@@ -122,6 +131,46 @@ class ParkingDestinationResultTests(unittest.TestCase):
 
         self.assertFalse(result["available"])
         self.assertEqual(result["parking_building_flows"], [])
+
+    def test_backfills_departure_times_from_route_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            person_plan = root / "person_plan.csv"
+            passenger_routes = root / "passenger.rou.xml"
+            pedestrian_routes = root / "pedestrian.rou.xml"
+            _write_csv(person_plan, [
+                "person_id", "vehicle_id", "arrival_mode", "building_id", "building_name",
+            ], [
+                {"person_id": "person.v1", "vehicle_id": "v1", "arrival_mode": "vehicle", "building_id": "b1", "building_name": "Library"},
+                {"person_id": "walker", "vehicle_id": "", "arrival_mode": "pedestrian", "building_id": "b1", "building_name": "Library"},
+            ])
+            passenger_routes.write_text(
+                '<routes><trip id="v1" depart="901" from="a" to="b" /></routes>',
+                encoding="utf-8",
+            )
+            pedestrian_routes.write_text(
+                '<routes><person id="walker" depart="30"><walk from="a" to="b" /></person></routes>',
+                encoding="utf-8",
+            )
+
+            result = _parking_destination_results(
+                person_plan,
+                root / "missing-vehicle.csv",
+                root / "missing-search.csv",
+                root / "missing-events.csv",
+                root / "missing-parkings.yaml",
+                None,
+                passenger_routes,
+                pedestrian_routes,
+            )
+
+        building = result["buildings"][0]
+        self.assertEqual(building["planned_vehicle_people"], 1)
+        self.assertEqual(building["planned_pedestrian_people"], 1)
+        self.assertEqual(building["destination_time_series"], [
+            {"time_seconds": 0, "vehicle_count": 0, "pedestrian_count": 1},
+            {"time_seconds": 900, "vehicle_count": 1, "pedestrian_count": 0},
+        ])
 
 
 if __name__ == "__main__":

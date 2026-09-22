@@ -44,6 +44,7 @@ export type BuildingClassificationType = {
 export type BuildingClassificationDemandDistribution = {
   pedestrian: number;
   vehicle: number;
+  capacityConstant?: number;
 };
 
 export type BuildingClassification = {
@@ -525,14 +526,17 @@ export type ParkingAttemptPoint = {
 export type ParkingDestinationAnalysis = {
   available: boolean;
   outcomes_available: boolean;
+  destination_interval_seconds?: number;
   summary: {
     planned_vehicle_people: number;
+    planned_pedestrian_people?: number;
     parked_people: number;
     unserved_people: number;
     without_parking_outcome: number;
     unused_parking_areas: number;
     destination_buildings: number;
     buildings_receiving_drivers: number;
+    buildings_receiving_pedestrians?: number;
   };
   parkings: Array<{
     id: string;
@@ -552,11 +556,22 @@ export type ParkingDestinationAnalysis = {
     id: string;
     name: string;
     planned_vehicle_people: number;
+    planned_pedestrian_people?: number;
     parked_people: number;
     unserved_people: number;
     without_parking_outcome: number;
     parking_area_count: number;
     vehicle_weight: number;
+    pedestrian_weight?: number;
+    capacity_constant?: number;
+    destination_capacity?: number;
+    footprint_area_square_metres?: number;
+    building_levels?: number;
+    destination_time_series?: Array<{
+      time_seconds: number;
+      vehicle_count: number;
+      pedestrian_count: number;
+    }>;
     eligible_parking_area_count: number;
     zero_driver_reason: string | null;
   }>;

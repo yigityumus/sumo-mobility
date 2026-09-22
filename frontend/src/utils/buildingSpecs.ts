@@ -42,11 +42,21 @@ function normalizeDemandPercentage(value, fallback = 50) {
   return Math.max(0, Math.min(100, parsed));
 }
 
+function normalizeCapacityConstant(value, fallback = 1) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.max(0, parsed);
+}
+
 function normalizeDemandDistributionEntry(value, fallback = 50) {
   const pedestrian = normalizeDemandPercentage(value?.pedestrian, fallback);
   return {
     pedestrian,
     vehicle: 100 - pedestrian,
+    capacityConstant: normalizeCapacityConstant(value?.capacityConstant, 1),
   };
 }
 
@@ -174,6 +184,7 @@ export function addBuildingType(classifications, classificationId, requestedName
       [nextType.id]: {
         pedestrian: 50,
         vehicle: 50,
+        capacityConstant: 1,
       },
     };
 
@@ -265,24 +276,34 @@ export function setBuildingAssignment(classifications, classificationId, buildin
 
 export function updateBuildingTypeDemandDistribution(classifications, classificationId, typeId, mode, value) {
   const timestamp = nowIso();
-  const nextValue = normalizeDemandPercentage(value, 50);
 
   return (classifications ?? []).map((classification) => {
     if (classification.id !== classificationId) {
       return classification;
     }
 
+    const currentDistribution = normalizeDemandDistributionEntry(
+      classification.demandDistribution?.[typeId],
+      50,
+    );
     const nextDemandDistribution = {
       ...(classification.demandDistribution ?? {}),
-      [typeId]: mode === "pedestrian"
+      [typeId]: mode === "capacityConstant"
         ? {
-            pedestrian: nextValue,
-            vehicle: 100 - nextValue,
+            ...currentDistribution,
+            capacityConstant: normalizeCapacityConstant(value, 1),
           }
-        : {
-            pedestrian: 100 - nextValue,
-            vehicle: nextValue,
-          },
+        : mode === "pedestrian"
+          ? {
+              ...currentDistribution,
+              pedestrian: normalizeDemandPercentage(value, 50),
+              vehicle: 100 - normalizeDemandPercentage(value, 50),
+            }
+          : {
+              ...currentDistribution,
+              pedestrian: 100 - normalizeDemandPercentage(value, 50),
+              vehicle: normalizeDemandPercentage(value, 50),
+            },
     };
 
     return {
@@ -348,7 +369,10 @@ export function buildingConfigJson({ modelName, buildings, buildingClassificatio
       demand_distribution: Object.fromEntries(
         (classification.types ?? []).map((type) => [
           type.id,
-          classification.demandDistribution?.[type.id] ?? { pedestrian: 50, vehicle: 50 },
+          normalizeDemandDistributionEntry(
+            classification.demandDistribution?.[type.id],
+            50,
+          ),
         ]),
       ),
       buildings: (buildings?.features ?? []).map((feature) => {
